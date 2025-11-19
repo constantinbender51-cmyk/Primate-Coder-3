@@ -386,13 +386,26 @@ class CodeEditor {
         try {
             const response = await fetch('/api/railway/status');
             const status = await response.json();
-            
-            if (status.error) {
+        
+            if (!response.ok) {
                 this.updateDeploymentStatus('error', 'API Error');
                 return;
             }
 
-            this.updateDeploymentStatus(status.status, status.url, status.serviceStatus);
+            // Handle different status cases
+            switch (status.status) {
+                case 'NOT_CONFIGURED':
+                    this.updateDeploymentStatus('not_configured', 'Not Configured');
+                    break;
+                case 'NO_DEPLOYMENTS':
+                    this.updateDeploymentStatus('no_deployments', 'No Deployments');
+                    break;
+                case 'ERROR':
+                    this.updateDeploymentStatus('error', status.message || 'Error');
+                    break;
+                default:
+                    this.updateDeploymentStatus(status.status, status.url, status.serviceStatus);
+            }
         } catch (error) {
             console.error('Failed to fetch deployment status:', error);
             this.updateDeploymentStatus('error', 'Connection Failed');
@@ -419,29 +432,39 @@ class CodeEditor {
                     urlLink.style.display = 'inline';
                 }
                 break;
-                
+            
             case 'BUILDING':
             case 'DEPLOYING':
                 indicator.classList.add('building');
                 statusText.textContent = serviceStatus || 'Deploying';
                 break;
-                
+            
             case 'FAILED':
             case 'CRASHED':
                 indicator.classList.add('failed');
                 statusText.textContent = 'Failed';
                 break;
-                
+            
             case 'QUEUED':
                 indicator.classList.add('queued');
                 statusText.textContent = 'Queued';
                 break;
-                
+            
+            case 'NOT_CONFIGURED':
+                indicator.classList.add('queued');
+                statusText.textContent = 'Not Configured';
+                break;
+            
             case 'NO_DEPLOYMENTS':
                 indicator.classList.add('queued');
                 statusText.textContent = 'No Deployments';
                 break;
-                
+            
+            case 'ERROR':
+                indicator.classList.add('failed');
+                statusText.textContent = 'API Error';
+                break;
+            
             default:
                 indicator.classList.add('queued');
                 statusText.textContent = status || 'Unknown';
