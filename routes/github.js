@@ -36,9 +36,33 @@ router.post('/apply-edits', async (req, res) => {
         }
       }
 
+      // Handle file deletion
+      if (edit.action === 'delete_file') {
+        if (fileExists) {
+          const existingFile = await octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path: edit.file_name
+          });
+
+          await octokit.rest.repos.deleteFile({
+            owner,
+            repo,
+            path: edit.file_name,
+            message: `AI: delete file ${edit.file_name}`,
+            sha: existingFile.data.sha
+          });
+          
+          results.push({ file: edit.file_name, success: true, action: 'deleted' });
+        } else {
+          results.push({ file: edit.file_name, success: false, error: 'File not found' });
+        }
+        continue; // Skip to next edit
+      }
+
       let lines = currentContent.split('\n');
       
-      // Apply the edit
+      // Apply other edits
       if (edit.action === 'write') {
         lines = edit.content.split('\n');
       } else if (edit.action === 'insert') {
@@ -82,7 +106,7 @@ router.post('/apply-edits', async (req, res) => {
           });
         }
 
-        results.push({ file: edit.file_name, success: true });
+        results.push({ file: edit.file_name, success: true, action: edit.action });
       } catch (error) {
         throw error;
       }
