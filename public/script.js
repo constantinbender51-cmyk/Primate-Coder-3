@@ -241,7 +241,10 @@ class CodeEditor {
     }
 
     hideEditPreview() {
-        document.getElementById('edit-preview').style.display = 'none';
+        const preview = document.getElementById('edit-preview');
+        if (preview) {
+            preview.style.display = 'none';
+        }
         this.pendingEdits = null;
     }
 
@@ -249,6 +252,7 @@ class CodeEditor {
         if (!this.pendingEdits) return;
 
         const applyButton = document.getElementById('apply-edit');
+        const originalText = applyButton.textContent;
         applyButton.textContent = 'Applying...';
         applyButton.disabled = true;
 
@@ -260,32 +264,35 @@ class CodeEditor {
             });
 
             const data = await response.json();
-            
+        
             if (data.error) {
                 throw new Error(data.details || data.error);
             }
 
             this.addMessage('ai', '✅ Changes applied successfully!');
+        
+            // Store the edits before hiding the preview
+            const appliedEdits = [...this.pendingEdits];
             this.hideEditPreview();
-            
+        
             // Reload affected files
-            this.pendingEdits.forEach(edit => {
+            appliedEdits.forEach(edit => {
                 if (edit.file_name === this.currentFile) {
                     this.loadFileContent(this.currentFile);
                 }
             });
-            
-            // Refresh file tree
-            this.loadFileTree();
-            
+        
+            // Refresh file tree to show new files
+            await this.loadFileTree();
+        
         } catch (error) {
             console.error('Failed to apply edits:', error);
             this.addMessage('ai', `❌ Failed to apply changes: ${error.message}`);
         } finally {
-            applyButton.textContent = 'Apply Changes';
+            applyButton.textContent = originalText;
             applyButton.disabled = false;
         }
-    }
+}
 
     setSendButtonState(enabled) {
         const button = document.getElementById('send-message');
