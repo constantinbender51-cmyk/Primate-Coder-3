@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Mobile Tabs -->
+        <div class="mobile-tabs">
+            <button class="tab-button active" data-tab="code">Code</button>
+            <button class="tab-button" data-tab="chat">Chat</button>
+        </div>
+
+        <!-- Code Pane -->
+        <div class="pane code-pane active" id="code-pane">
+            <div class="pane-header">
+                <h3>Repository Files</h3>
+                <button class="refresh-btn" id="refresh-files">Refresh</button>
+            </div>
+            <div class="file-tree" id="file-tree">
+                <div class="loading">Loading files...</div>
+            </div>
+            <div class="file-content" id="file-content">
+                <div class="no-file-selected">
+                    Select a file to view its content
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Pane -->
+        <div class="pane chat-pane" id="chat-pane">
+            <div class="chat-header">
+                <h3>AI Assistant</h3>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message ai-message">
+                    <div class="message-sender">AI</div>
+                    <div class="message-content">
+                        Hello! I'm your AI coding assistant. I can help you edit code in this repository. 
+                        Tell me what changes you'd like to make!
+                    </div>
+                </div>
+            </div>
+            
+            <div class="edit-preview" id="edit-preview" style="display: none;">
+                <div class="edit-header">
+                    <h4>Proposed Changes</h4>
+                    <button class="close-preview" id="close-preview">×</button>
+                </div>
+                <div class="edit-content" id="edit-content"></div>
+                <div class="edit-actions">
+                    <button class="btn btn-secondary" id="cancel-edit">Cancel</button>
+                    <button class="btn btn-primary" id="apply-edit">Apply Changes</button>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="chat-input">
+                    <textarea 
+                        id="message-input" 
+                        placeholder="Ask the AI to make code changes..." 
+                        rows="3"
+                    ></textarea>
+                    <button id="send-message">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
