@@ -4,10 +4,10 @@ const router = express.Router();
 
 const RAILWAY_API_URL = 'https://backboard.railway.app/graphql/v2';
 
-// Simple deployment status query
-const SIMPLE_STATUS_QUERY = `
-  query GetDeployments($projectId: String!) {
-    deployments(projectId: $projectId, limit: 1) {
+// Get deployments using project token
+const DEPLOYMENTS_QUERY = `
+  query GetDeployments {
+    deployments(limit: 5) {
       edges {
         node {
           id
@@ -24,41 +24,53 @@ const SIMPLE_STATUS_QUERY = `
   }
 `;
 
+// Get project info
+const PROJECT_QUERY = `
+  query {
+    project {
+      id
+      name
+      services {
+        id
+        name
+        url
+      }
+    }
+  }
+`;
+
 // Get latest deployment status
 router.get('/status', async (req, res) => {
   try {
-    // Check if environment variables are set
-    if (!process.env.RAILWAY_TOKEN || !process.env.RAILWAY_APP_PROJECT_ID) {
+    if (!process.env.RAILWAY_TOKEN) {
       return res.json({
         status: 'NOT_CONFIGURED',
-        message: 'Railway not configured'
+        message: 'RAILWAY_TOKEN not set'
       });
     }
+
+    console.log('Using Railway project token');
 
     const response = await axios.post(
       RAILWAY_API_URL,
       {
-        query: SIMPLE_STATUS_QUERY,
-        variables: {
-          projectId: process.env.RAILWAY_APP_PROJECT_ID
-        }
+        query: DEPLOYMENTS_QUERY
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.RAILWAY_TOKEN}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'AI-Code-Editor/1.0'
-        },
-        timeout: 10000 // 10 second timeout
+          'Project-Access-Token': process.env.RAILWAY_TOKEN,
+          'Content-Type': 'application/json'
+        }
       }
     );
 
-    // Check for GraphQL errors
+    console.log('Railway API response:', JSON.stringify(response.data, null, 2));
+
     if (response.data.errors) {
-      console.error('Railway GraphQL errors:', response.data.errors);
       return res.json({
         status: 'API_ERROR',
-        message: response.data.errors[0]?.message || 'GraphQL error'
+        message: 'GraphQL error',
+        errors: response.data.errors
       });
     }
 
@@ -73,11 +85,7 @@ router.get('/status', async (req, res) => {
 
     const latestDeployment = deployments[0].node;
     const services = latestDeployment.services || [];
-    
-    // Find the main service
-    const mainService = services.find(service => 
-      service.name === 'web' || service.name === 'app' || service.name === 'api'
-    ) || services[0];
+    const mainService = services[0];
 
     res.json({
       status: latestDeployment.status,
@@ -87,18 +95,18 @@ router.get('/status', async (req, res) => {
       url: mainService?.url,
       serviceStatus: mainService?.status
     });
+
   } catch (error) {
-    console.error('Railway API error:', error.response?.data || error.message);
-    
-    // Provide more specific error messages
+    console.error('Railway API error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+
     let errorMessage = 'Failed to fetch deployment status';
     
     if (error.response?.status === 401) {
-      errorMessage = 'Invalid Railway token';
-    } else if (error.response?.status === 404) {
-      errorMessage = 'Project not found';
-    } else if (error.code === 'ECONNREFUSED') {
-      errorMessage = 'Cannot connect to Railway API';
+      errorMessage = 'Invalid Railway project token';
     }
     
     res.json({
@@ -109,29 +117,84 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// Simple health check endpoint
-router.get('/health', async (req, res) => {
+// Verify project access with project token
+router.get('/verify', async (req, res) => {
   try {
     const response = await axios.post(
       RAILWAY_API_URL,
       {
-        query: '{ __schema { types { name } } }' // Simple schema query
+        query: PROJECT_QUERY
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.RAILWAY_TOKEN}`,
+          'Project-Access-Token': process.env.RAILWAY_TOKEN,
           'Content-Type': 'application/json'
-        },
-        timeout: 5000
+        }
       }
     );
+
+    if (response.data.errors) {
+      return res.json({
+        success: false,
+        message: 'Cannot access project',
+        errors: response.data.errors
+      });
+    }
+
+    const project = response.data.data?.project;
     
-    res.json({ status: 'OK', message: 'Railway API is accessible' });
+    if (!project) {
+      return res.json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      project: {
+        id: project.id,
+        name: project.name,
+        services: project.services
+      },
+      message: 'Project access verified'
+    });
+
   } catch (error) {
-    res.json({ 
-      status: 'ERROR', 
-      message: 'Cannot connect to Railway API',
-      details: error.response?.data || error.message
+    res.json({
+      success: false,
+      message: 'Failed to verify project',
+      error: error.response?.data || error.message
+    });
+  }
+});
+
+// Get project token info
+router.get('/token-info', async (req, res) => {
+  try {
+    const response = await axios.post(
+      RAILWAY_API_URL,
+      {
+        query: 'query { projectToken { projectId environmentId } }'
+      },
+      {
+        headers: {
+          'Project-Access-Token': process.env.RAILWAY_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      tokenInfo: response.data.data?.projectToken,
+      data: response.data
+    });
+
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.response?.data || error.message
     });
   }
 });
