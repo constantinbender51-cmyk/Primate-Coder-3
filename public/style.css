@@ -404,6 +404,88 @@ body {
     overflow-x: auto;
 }
 
+/* Deployment Status Styles */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.deployment-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    font-size: 12px;
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+.status-indicator.success {
+    background: #3fb950;
+    animation: none;
+}
+
+.status-indicator.building {
+    background: #d29922;
+}
+
+.status-indicator.failed {
+    background: #f85149;
+    animation: none;
+}
+
+.status-indicator.queued {
+    background: #8b949e;
+    animation: none;
+}
+
+.status-indicator.live {
+    background: #1f6feb;
+    animation: none;
+}
+
+.status-text {
+    color: #c9d1d9;
+    font-weight: 500;
+}
+
+.deployment-url {
+    color: #1f6feb;
+    text-decoration: none;
+    font-size: 11px;
+}
+
+.deployment-url:hover {
+    text-decoration: underline;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Mobile styles for deployment status */
+@media (max-width: 768px) {
+    .deployment-status {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    
+    .header-actions {
+        gap: 8px;
+    }
+}
+
 /* Mobile Styles */
 @media (max-width: 768px) {
     .mobile-tabs {
