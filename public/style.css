@@ -82,6 +82,13 @@ body {
     font-size: 12px;
 }
 
+/* Code Pane Layout */
+.code-pane-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
 /* Header actions container */
 .header-actions {
     display: flex;
