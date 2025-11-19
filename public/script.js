@@ -300,6 +300,135 @@ class CodeEditor {
         // Simple error display - you might want to use a toast or better UI
         alert(message);
     }
+
+    async checkRepoStatus() {
+        try {
+            const response = await fetch('/api/files/repo-status');
+            const status = await response.json();
+            
+            if (!status.exists) {
+                this.showRepoError('Repository not found or inaccessible. Please check your configuration.');
+                return false;
+            }
+            
+            if (status.empty) {
+                this.showEmptyRepoPrompt();
+                return false;
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Failed to check repo status:', error);
+            this.showRepoError('Failed to connect to repository');
+            return false;
+        }
+    }
+
+    showEmptyRepoPrompt() {
+        const messagesContainer = document.getElementById('chat-messages');
+        const messageElement = document.createElement('div');
+        messageElement.className = 'message ai-message';
+        messageElement.innerHTML = `
+            <div class="message-sender">AI</div>
+            <div class="message-content">
+                <p>📝 This repository is empty. I can help you get started!</p>
+                <p>Would you like me to create an initial file to begin working?</p>
+                <div class="repo-actions">
+                    <button class="btn btn-primary" id="init-repo">Create README.md</button>
+                    <button class="btn btn-secondary" id="skip-init">Skip for now</button>
+                </div>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(messageElement);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // Add event listeners for the buttons
+        document.getElementById('init-repo').addEventListener('click', () => this.initializeRepo());
+        document.getElementById('skip-init').addEventListener('click', () => {
+            messageElement.remove();
+            this.addMessage('ai', 'Okay! You can ask me to create files whenever you\'re ready.');
+        });
+    }
+
+    async initializeRepo() {
+        try {
+            const response = await fetch('/api/files/init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'README.md',
+                    content: '# AI Code Editor Project\n\nThis repository was initialized by the AI Code Editor.\n\nStart by asking the AI to create or modify files!'
+                })
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                this.addMessage('ai', '✅ Repository initialized! Created README.md. You can now start editing files.');
+                this.loadFileTree(); // Refresh the file tree
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            console.error('Failed to initialize repo:', error);
+            this.addMessage('ai', `❌ Failed to initialize repository: ${error.message}`);
+        }
+    }
+
+    showRepoError(message) {
+        const fileTree = document.getElementById('file-tree');
+        fileTree.innerHTML = `
+            <div class="repo-error">
+                <div class="error-icon">⚠️</div>
+                <div class="error-message">${message}</div>
+                <div class="error-help">
+                    Please check:
+                    <ul>
+                        <li>Repository exists and is accessible</li>
+                        <li>GitHub token has correct permissions</li>
+                        <li>Repository name and owner are correct</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+        
+        // Also show error in chat
+        this.addMessage('ai', `Repository Error: ${message}`);
+    }
+
+    async loadFileTree() {
+        try {
+            // First check repo status
+            const repoOk = await this.checkRepoStatus();
+            if (!repoOk) return;
+
+            const response = await fetch('/api/files/tree');
+            const files = await response.json();
+            
+            if (files.length === 0) {
+                this.showEmptyRepoState();
+            } else {
+                this.renderFileTree(files);
+            }
+        } catch (error) {
+            console.error('Failed to load file tree:', error);
+            this.showError('Failed to load repository files');
+        }
+    }
+
+    showEmptyRepoState() {
+        const fileTree = document.getElementById('file-tree');
+        fileTree.innerHTML = `
+            <div class="empty-repo">
+                <div class="empty-icon">📁</div>
+                <div class="empty-message">Repository is empty</div>
+                <button class="btn btn-primary" id="init-from-tree">Initialize Repository</button>
+            </div>
+        `;
+        
+        document.getElementById('init-from-tree').addEventListener('click', () => this.initializeRepo());
+    }
 }
 
 // Initialize the application when DOM is loaded
