@@ -15,25 +15,119 @@ const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 // Memory storage (in production, use Redis or database)
 const conversationMemory = new Map();
 
-// Simple function to get file list
-async function getFileList() {
+// Get repository structure WITH content
+async function getRepoWithContent() {
   try {
     const response = await octokit.rest.repos.getContent({
       owner,
       repo,
       path: ''
     });
-    return response.data.map(item => ({
-      name: item.name,
-      path: item.path,
-      type: item.type
-    }));
+    return await processDirectoryWithContent(response.data);
   } catch (error) {
     if (error.status === 404) {
       return []; // Empty repository
     }
     throw error;
   }
+}
+
+// Recursively process directory and get file contents
+async function processDirectoryWithContent(items) {
+  const result = [];
+
+  for (const item of items) {
+    if (item.type === 'dir') {
+      try {
+        const dirResponse = await octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path: item.path
+        });
+        
+        result.push({
+          name: item.name,
+          path: item.path,
+          type: 'dir',
+          children: await processDirectoryWithContent(dirResponse.data)
+        });
+      } catch (error) {
+        console.error(`Failed to process directory ${item.path}:`, error);
+        result.push({
+          name: item.name,
+          path: item.path,
+          type: 'dir',
+          children: [],
+          error: true
+        });
+      }
+    } else {
+      // Get file content
+      try {
+        const fileResponse = await octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path: item.path
+        });
+        
+        const content = Buffer.from(fileResponse.data.content, 'base64').toString();
+        result.push({
+          name: item.name,
+          path: item.path,
+          type: 'file',
+          content: content,
+          size: item.size
+        });
+      } catch (error) {
+        console.error(`Failed to get content for ${item.path}:`, error);
+        result.push({
+          name: item.name,
+          path: item.path,
+          type: 'file',
+          content: null,
+          error: true
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+// Format repository context with file contents
+function formatRepoContext(files) {
+  if (files.length === 0) {
+    return 'The repository is currently empty.';
+  }
+
+  let result = 'Current repository contents:\n\n';
+  
+  function processFiles(fileList, indent = 0) {
+    const spaces = '  '.repeat(indent);
+    
+    fileList.forEach(file => {
+      if (file.type === 'dir') {
+        result += `${spaces}📁 ${file.name}/\n`;
+        if (file.children && file.children.length > 0) {
+          processFiles(file.children, indent + 1);
+        }
+      } else {
+        result += `${spaces}📄 ${file.name}\n`;
+        if (file.content) {
+          // Include file content with line numbers
+          const lines = file.content.split('\n');
+          result += `${spaces}----------------------------------------\n`;
+          lines.forEach((line, index) => {
+            result += `${spaces}${(index + 1).toString().padStart(3)}: ${line}\n`;
+          });
+          result += `${spaces}----------------------------------------\n\n`;
+        }
+      }
+    });
+  }
+  
+  processFiles(files);
+  return result;
 }
 
 // Get conversation history for a session
@@ -43,7 +137,6 @@ function getConversationHistory(sessionId, maxMessages = 10) {
   }
   
   const session = conversationMemory.get(sessionId);
-  // Return last N messages to stay within token limits
   return session.messages.slice(-maxMessages);
 }
 
@@ -74,17 +167,9 @@ router.post('/chat', async (req, res) => {
     // Get conversation history
     const history = getConversationHistory(sessionId);
     
-    // Get current file list for context
-    const files = await getFileList();
-    
-    // Build context message
-    let contextMessage = '';
-    if (files.length === 0) {
-      contextMessage = 'The repository is currently empty.';
-    } else {
-      contextMessage = 'Current files in repository:\n' + 
-        files.map(file => `- ${file.type === 'dir' ? '📁' : '📄'} ${file.path}`).join('\n');
-    }
+    // Get current repository WITH content
+    const repoContents = await getRepoWithContent();
+    const context = formatRepoContext(repoContents);
 
     // Prepare messages for DeepSeek
     const messages = [
@@ -92,8 +177,8 @@ router.post('/chat', async (req, res) => {
         role: 'system', 
         content: `You are an AI coding assistant with memory of this conversation. 
         
-CONTEXT:
-${contextMessage}
+CURRENT CODEBASE:
+${context}
 
 CONVERSATION HISTORY:
 You have been discussing the codebase with the user. Reference previous work when appropriate.
@@ -117,7 +202,8 @@ RULES:
 - Use "delete" to remove specific lines (content must match exactly)
 - Use "delete_file" to completely remove files from repository
 - For file deletion, only include file_name and action, line and content are not needed
-- Always include line numbers for insert/delete operations`
+- Always include line numbers for insert/delete operations
+- Reference the actual file contents above to ensure your edits are accurate`
       }
     ];
 
@@ -192,13 +278,6 @@ RULES:
       error: 'Failed to get AI response'
     });
   }
-});
-
-// Debug endpoint to see conversation history
-router.get('/history/:sessionId', (req, res) => {
-  const sessionId = req.params.sessionId;
-  const history = getConversationHistory(sessionId, 50); // Get more for debugging
-  res.json(history);
 });
 
 module.exports = router;
