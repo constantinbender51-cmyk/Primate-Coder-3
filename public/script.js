@@ -5,10 +5,13 @@ class CodeEditor {
         this.init();
     }
 
-    init() {
+    async init() {
         this.setupEventListeners();
-        this.loadFileTree();
         this.setMobileView();
+        
+        // Check repo status before loading files
+        await this.checkRepoStatus();
+        await this.loadFileTree();
     }
 
     setupEventListeners() {
