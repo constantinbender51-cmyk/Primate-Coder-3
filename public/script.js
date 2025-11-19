@@ -2,15 +2,22 @@ class CodeEditor {
     constructor() {
         this.currentFile = null;
         this.pendingEdits = null;
+        this.sessionId = this.getOrCreateSessionId();
         this.init();
+    }
+
+    getOrCreateSessionId() {
+        let sessionId = sessionStorage.getItem('ai_editor_session_id');
+        if (!sessionId) {
+            sessionId = 'session_' + Math.random().toString(36).substr(2, 9);
+            sessionStorage.setItem('ai_editor_session_id', sessionId);
+        }
+        return sessionId;
     }
 
     async init() {
         this.setupEventListeners();
         this.setMobileView();
-        
-        // Check repo status before loading files
-        await this.checkRepoStatus();
         await this.loadFileTree();
     }
 
@@ -60,12 +67,38 @@ class CodeEditor {
     async loadFileTree() {
         try {
             const response = await fetch('/api/files/tree');
+            if (!response.ok) {
+                throw new Error('Failed to load files');
+            }
             const files = await response.json();
-            this.renderFileTree(files);
+            
+            if (files.length === 0) {
+                this.showEmptyState();
+            } else {
+                this.renderFileTree(files);
+            }
         } catch (error) {
             console.error('Failed to load file tree:', error);
-            this.showError('Failed to load repository files');
+            this.showEmptyState();
         }
+    }
+
+    showEmptyState() {
+        const fileTree = document.getElementById('file-tree');
+        fileTree.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">📁</div>
+                <div class="empty-message">Repository is empty</div>
+                <div class="empty-hint">Ask the AI to create files to get started!</div>
+            </div>
+        `;
+        
+        // Clear file content view
+        document.getElementById('file-content').innerHTML = `
+            <div class="no-file-selected">
+                Select a file to view its content
+            </div>
+        `;
     }
 
     renderFileTree(files, container = null, level = 0) {
@@ -178,11 +211,21 @@ class CodeEditor {
         try {
             const response = await fetch('/api/deepseek/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Session-ID': this.sessionId 
+                },
                 body: JSON.stringify({ message })
             });
 
             const data = await response.json();
+            
+            // Get the session ID from response headers (in case it was generated server-side)
+            const newSessionId = response.headers.get('x-session-id');
+            if (newSessionId && newSessionId !== this.sessionId) {
+                this.sessionId = newSessionId;
+                sessionStorage.setItem('ai_editor_session_id', newSessionId);
+            }
             
             if (data.error) {
                 throw new Error(data.details || data.error);
@@ -310,7 +353,7 @@ class CodeEditor {
             applyButton.textContent = originalText;
             applyButton.disabled = false;
         }
-}
+    }
 
     setSendButtonState(enabled) {
         const button = document.getElementById('send-message');
@@ -328,44 +371,6 @@ class CodeEditor {
         // Simple error display - you might want to use a toast or better UI
         alert(message);
     }
-
-    async loadFileTree() {
-        try {
-            const response = await fetch('/api/files/tree');
-            if (!response.ok) {
-                throw new Error('Failed to load files');
-            }
-            const files = await response.json();
-            
-            if (files.length === 0) {
-                this.showEmptyState();
-            } else {
-                this.renderFileTree(files);
-            }
-        } catch (error) {
-            console.error('Failed to load file tree:', error);
-            this.showEmptyState();
-        }
-    }
-
-    showEmptyState() {
-        const fileTree = document.getElementById('file-tree');
-        fileTree.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">📁</div>
-                <div class="empty-message">Repository is empty</div>
-                <div class="empty-hint">Ask the AI to create files to get started!</div>
-            </div>
-        `;
-        
-        // Clear file content view
-        document.getElementById('file-content').innerHTML = `
-            <div class="no-file-selected">
-                Select a file to view its content
-            </div>
-        `;
-    }
-
 }
 
 // Initialize the application when DOM is loaded
