@@ -4,19 +4,26 @@ const router = express.Router();
 
 const RAILWAY_API_URL = 'https://backboard.railway.app/graphql/v2';
 
-// Fixed queries for project tokens
+// Get deployments with proper project token query structure
 const DEPLOYMENTS_QUERY = `
-  query GetDeployments {
-    deployments {
+  query GetDeployments($projectId: String!, $environmentId: String!, $serviceId: String!) {
+    deployments(
+      first: 1
+      input: {
+        projectId: $projectId
+        environmentId: $environmentId
+        serviceId: $serviceId
+      }
+    ) {
       edges {
         node {
           id
           status
+          staticUrl
           createdAt
-          services {
+          meta {
             name
-            status
-            url
+            value
           }
         }
       }
@@ -24,16 +31,13 @@ const DEPLOYMENTS_QUERY = `
   }
 `;
 
-const PROJECT_QUERY = `
-  query GetProject {
-    project {
+// Get service info
+const SERVICES_QUERY = `
+  query GetServices($projectId: String!, $environmentId: String!) {
+    services(projectId: $projectId, environmentId: $environmentId) {
       id
       name
-      services {
-        id
-        name
-        url
-      }
+      url
     }
   }
 `;
@@ -41,10 +45,25 @@ const PROJECT_QUERY = `
 // Get latest deployment status
 router.get('/status', async (req, res) => {
   try {
-    const response = await axios.post(
+    // First get token info to get projectId and environmentId
+    const tokenInfo = await getTokenInfo();
+    
+    if (!tokenInfo.success) {
+      return res.json({
+        status: 'ERROR',
+        message: 'Cannot get token info'
+      });
+    }
+
+    // Get services to find the service ID
+    const servicesResponse = await axios.post(
       RAILWAY_API_URL,
       {
-        query: DEPLOYMENTS_QUERY
+        query: SERVICES_QUERY,
+        variables: {
+          projectId: tokenInfo.projectId,
+          environmentId: tokenInfo.environmentId
+        }
       },
       {
         headers: {
@@ -54,39 +73,77 @@ router.get('/status', async (req, res) => {
       }
     );
 
-    console.log('Deployments response:', JSON.stringify(response.data, null, 2));
+    console.log('Services response:', JSON.stringify(servicesResponse.data, null, 2));
 
-    if (response.data.errors) {
+    if (servicesResponse.data.errors) {
       return res.json({
         status: 'API_ERROR',
-        message: 'GraphQL error',
-        errors: response.data.errors
+        message: 'Failed to get services',
+        errors: servicesResponse.data.errors
       });
     }
 
-    const deployments = response.data.data?.deployments?.edges;
+    const services = servicesResponse.data.data?.services;
+    
+    if (!services || services.length === 0) {
+      return res.json({
+        status: 'NO_SERVICES',
+        message: 'No services found'
+      });
+    }
+
+    // Use the first service ID
+    const serviceId = services[0].id;
+
+    // Now get deployments
+    const deploymentsResponse = await axios.post(
+      RAILWAY_API_URL,
+      {
+        query: DEPLOYMENTS_QUERY,
+        variables: {
+          projectId: tokenInfo.projectId,
+          environmentId: tokenInfo.environmentId,
+          serviceId: serviceId
+        }
+      },
+      {
+        headers: {
+          'Project-Access-Token': process.env.RAILWAY_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('Deployments response:', JSON.stringify(deploymentsResponse.data, null, 2));
+
+    if (deploymentsResponse.data.errors) {
+      return res.json({
+        status: 'API_ERROR',
+        message: 'Failed to get deployments',
+        errors: deploymentsResponse.data.errors
+      });
+    }
+
+    const deployments = deploymentsResponse.data.data?.deployments?.edges;
     
     if (!deployments || deployments.length === 0) {
       return res.json({
         status: 'NO_DEPLOYMENTS',
-        message: 'No deployments found'
+        message: 'No deployments found',
+        serviceUrl: services[0]?.url // Return service URL even if no deployments
       });
     }
 
-    // Get the latest deployment (first in the list)
     const latestDeployment = deployments[0].node;
-    const services = latestDeployment.services || [];
-    
-    // Find a service with a URL (usually web service)
-    const mainService = services.find(service => service.url) || services[0];
+    const serviceUrl = services[0]?.url || latestDeployment.staticUrl;
 
     res.json({
-      status: latestDeployment.status,
+      status: latestDeployment.status || 'SUCCESS', // Default to success if no status
       createdAt: latestDeployment.createdAt,
       deploymentId: latestDeployment.id,
-      services: services,
-      url: mainService?.url,
-      serviceStatus: mainService?.status
+      url: serviceUrl,
+      staticUrl: latestDeployment.staticUrl,
+      serviceId: serviceId
     });
 
   } catch (error) {
@@ -94,19 +151,25 @@ router.get('/status', async (req, res) => {
     
     res.json({
       status: 'ERROR',
-      message: 'Failed to fetch deployments',
+      message: 'Failed to fetch deployment status',
       details: error.response?.data || error.message
     });
   }
 });
 
-// Get project info
-router.get('/project', async (req, res) => {
+// Get services list
+router.get('/services', async (req, res) => {
   try {
+    const tokenInfo = await getTokenInfo();
+    
     const response = await axios.post(
       RAILWAY_API_URL,
       {
-        query: PROJECT_QUERY
+        query: SERVICES_QUERY,
+        variables: {
+          projectId: tokenInfo.projectId,
+          environmentId: tokenInfo.environmentId
+        }
       },
       {
         headers: {
@@ -115,60 +178,39 @@ router.get('/project', async (req, res) => {
         }
       }
     );
-
-    console.log('Project response:', JSON.stringify(response.data, null, 2));
 
     if (response.data.errors) {
       return res.json({
         success: false,
-        message: 'GraphQL error',
+        message: 'Failed to get services',
         errors: response.data.errors
       });
     }
 
-    const project = response.data.data?.project;
+    const services = response.data.data?.services;
     
-    if (!project) {
-      return res.json({
-        success: false,
-        message: 'Project data not found in response'
-      });
-    }
-
     res.json({
       success: true,
-      project: project,
-      message: 'Project info retrieved'
+      services: services,
+      message: 'Services retrieved successfully'
     });
 
   } catch (error) {
-    console.error('Project API error:', error.response?.data || error.message);
     res.json({
       success: false,
-      message: 'Failed to fetch project',
+      message: 'Failed to fetch services',
       error: error.response?.data || error.message
     });
   }
 });
 
-// Test simple query
-router.get('/test-simple', async (req, res) => {
+// Helper function to get token info
+async function getTokenInfo() {
   try {
     const response = await axios.post(
-      RAILWAY_API_URL,
+      'https://backboard.railway.app/graphql/v2',
       {
-        query: `
-          query {
-            deployments {
-              edges {
-                node {
-                  id
-                  status
-                }
-              }
-            }
-          }
-        `
+        query: 'query { projectToken { projectId environmentId } }'
       },
       {
         headers: {
@@ -178,17 +220,24 @@ router.get('/test-simple', async (req, res) => {
       }
     );
 
-    res.json({
+    const tokenInfo = response.data.data?.projectToken;
+    
+    if (!tokenInfo) {
+      throw new Error('No token info received');
+    }
+
+    return {
       success: true,
-      data: response.data
-    });
+      projectId: tokenInfo.projectId,
+      environmentId: tokenInfo.environmentId
+    };
 
   } catch (error) {
-    res.json({
+    return {
       success: false,
-      error: error.response?.data || error.message
-    });
+      error: error.message
+    };
   }
-});
+}
 
 module.exports = router;
