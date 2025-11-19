@@ -4,10 +4,10 @@ const router = express.Router();
 
 const RAILWAY_API_URL = 'https://backboard.railway.app/graphql/v2';
 
-// Get deployments using project token
+// Fixed queries for project tokens
 const DEPLOYMENTS_QUERY = `
   query GetDeployments {
-    deployments(limit: 5) {
+    deployments {
       edges {
         node {
           id
@@ -24,9 +24,8 @@ const DEPLOYMENTS_QUERY = `
   }
 `;
 
-// Get project info
 const PROJECT_QUERY = `
-  query {
+  query GetProject {
     project {
       id
       name
@@ -42,15 +41,6 @@ const PROJECT_QUERY = `
 // Get latest deployment status
 router.get('/status', async (req, res) => {
   try {
-    if (!process.env.RAILWAY_TOKEN) {
-      return res.json({
-        status: 'NOT_CONFIGURED',
-        message: 'RAILWAY_TOKEN not set'
-      });
-    }
-
-    console.log('Using Railway project token');
-
     const response = await axios.post(
       RAILWAY_API_URL,
       {
@@ -64,7 +54,7 @@ router.get('/status', async (req, res) => {
       }
     );
 
-    console.log('Railway API response:', JSON.stringify(response.data, null, 2));
+    console.log('Deployments response:', JSON.stringify(response.data, null, 2));
 
     if (response.data.errors) {
       return res.json({
@@ -83,9 +73,12 @@ router.get('/status', async (req, res) => {
       });
     }
 
+    // Get the latest deployment (first in the list)
     const latestDeployment = deployments[0].node;
     const services = latestDeployment.services || [];
-    const mainService = services[0];
+    
+    // Find a service with a URL (usually web service)
+    const mainService = services.find(service => service.url) || services[0];
 
     res.json({
       status: latestDeployment.status,
@@ -97,28 +90,18 @@ router.get('/status', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Railway API error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
-
-    let errorMessage = 'Failed to fetch deployment status';
-    
-    if (error.response?.status === 401) {
-      errorMessage = 'Invalid Railway project token';
-    }
+    console.error('Railway API error:', error.response?.data || error.message);
     
     res.json({
       status: 'ERROR',
-      message: errorMessage,
+      message: 'Failed to fetch deployments',
       details: error.response?.data || error.message
     });
   }
 });
 
-// Verify project access with project token
-router.get('/verify', async (req, res) => {
+// Get project info
+router.get('/project', async (req, res) => {
   try {
     const response = await axios.post(
       RAILWAY_API_URL,
@@ -133,10 +116,12 @@ router.get('/verify', async (req, res) => {
       }
     );
 
+    console.log('Project response:', JSON.stringify(response.data, null, 2));
+
     if (response.data.errors) {
       return res.json({
         success: false,
-        message: 'Cannot access project',
+        message: 'GraphQL error',
         errors: response.data.errors
       });
     }
@@ -146,36 +131,44 @@ router.get('/verify', async (req, res) => {
     if (!project) {
       return res.json({
         success: false,
-        message: 'Project not found'
+        message: 'Project data not found in response'
       });
     }
 
     res.json({
       success: true,
-      project: {
-        id: project.id,
-        name: project.name,
-        services: project.services
-      },
-      message: 'Project access verified'
+      project: project,
+      message: 'Project info retrieved'
     });
 
   } catch (error) {
+    console.error('Project API error:', error.response?.data || error.message);
     res.json({
       success: false,
-      message: 'Failed to verify project',
+      message: 'Failed to fetch project',
       error: error.response?.data || error.message
     });
   }
 });
 
-// Get project token info
-router.get('/token-info', async (req, res) => {
+// Test simple query
+router.get('/test-simple', async (req, res) => {
   try {
     const response = await axios.post(
       RAILWAY_API_URL,
       {
-        query: 'query { projectToken { projectId environmentId } }'
+        query: `
+          query {
+            deployments {
+              edges {
+                node {
+                  id
+                  status
+                }
+              }
+            }
+          }
+        `
       },
       {
         headers: {
@@ -187,7 +180,6 @@ router.get('/token-info', async (req, res) => {
 
     res.json({
       success: true,
-      tokenInfo: response.data.data?.projectToken,
       data: response.data
     });
 
