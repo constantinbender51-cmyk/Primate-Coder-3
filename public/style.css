@@ -164,6 +164,7 @@ body {
 .chat-messages {
     flex: 1;
     overflow-y: auto;
+    overflow-x: auto;
     padding: 16px;
     display: flex;
     flex-direction: column;
@@ -395,6 +396,12 @@ body {
 .empty-hint {
     font-size: 14px;
     opacity: 0.8;
+}
+
+.message-content {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
 }
 
 /* Mobile Styles */
