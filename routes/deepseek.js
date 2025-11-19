@@ -12,7 +12,10 @@ const repo = process.env.GITHUB_REPO_NAME;
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 
-// Simple function to get file list (no content)
+// Memory storage (in production, use Redis or database)
+const conversationMemory = new Map();
+
+// Simple function to get file list
 async function getFileList() {
   try {
     const response = await octokit.rest.repos.getContent({
@@ -33,25 +36,45 @@ async function getFileList() {
   }
 }
 
-// Simple function to get file content if needed
-async function getFileContent(filePath) {
-  try {
-    const response = await octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path: filePath
-    });
-    return Buffer.from(response.data.content, 'base64').toString();
-  } catch (error) {
-    return null;
+// Get conversation history for a session
+function getConversationHistory(sessionId, maxMessages = 10) {
+  if (!conversationMemory.has(sessionId)) {
+    conversationMemory.set(sessionId, { messages: [] });
+  }
+  
+  const session = conversationMemory.get(sessionId);
+  // Return last N messages to stay within token limits
+  return session.messages.slice(-maxMessages);
+}
+
+// Add message to conversation history
+function addMessageToHistory(sessionId, role, content) {
+  if (!conversationMemory.has(sessionId)) {
+    conversationMemory.set(sessionId, { messages: [] });
+  }
+  
+  const session = conversationMemory.get(sessionId);
+  session.messages.push({
+    role,
+    content,
+    timestamp: Date.now()
+  });
+  
+  // Keep only last 20 messages to prevent memory issues
+  if (session.messages.length > 20) {
+    session.messages = session.messages.slice(-20);
   }
 }
 
 router.post('/chat', async (req, res) => {
   try {
     const { message } = req.body;
+    const sessionId = req.sessionId;
 
-    // Get simple file list
+    // Get conversation history
+    const history = getConversationHistory(sessionId);
+    
+    // Get current file list for context
     const files = await getFileList();
     
     // Build context message
@@ -61,29 +84,22 @@ router.post('/chat', async (req, res) => {
     } else {
       contextMessage = 'Current files in repository:\n' + 
         files.map(file => `- ${file.type === 'dir' ? '📁' : '📄'} ${file.path}`).join('\n');
-      
-      // If user is asking about specific files, include their content
-      const lowerMessage = message.toLowerCase();
-      for (const file of files) {
-        if (file.type === 'file' && lowerMessage.includes(file.name.toLowerCase())) {
-          const content = await getFileContent(file.path);
-          if (content) {
-            contextMessage += `\n\nContent of ${file.path}:\n\`\`\`\n${content}\n\`\`\``;
-          }
-        }
-      }
     }
 
-    const userMessageWithContext = `${contextMessage}\n\nUser request: ${message}`;
+    // Prepare messages for DeepSeek
+    const messages = [
+      { 
+        role: 'system', 
+        content: `You are an AI coding assistant with memory of this conversation. 
+        
+CONTEXT:
+${contextMessage}
 
-    const response = await axios.post(
-      DEEPSEEK_API_URL,
-      {
-        model: 'deepseek-chat',
-        messages: [
-          { 
-            role: 'system', 
-            content: `You are an AI coding assistant. Respond with JSON for code changes in this format:
+CONVERSATION HISTORY:
+You have been discussing the codebase with the user. Reference previous work when appropriate.
+
+RESPONSE FORMAT:
+Respond with JSON for code changes in this format:
 {
   "files": [
     {
@@ -94,10 +110,30 @@ router.post('/chat', async (req, res) => {
     }
   ]
 }
+
 Rules: Use "write" for new files or full replacements, "insert" to add lines, "delete" to remove lines.`
-          },
-          { role: 'user', content: userMessageWithContext }
-        ],
+      }
+    ];
+
+    // Add conversation history
+    history.forEach(msg => {
+      messages.push({
+        role: msg.role === 'ai' ? 'assistant' : 'user',
+        content: msg.content
+      });
+    });
+
+    // Add current user message
+    messages.push({
+      role: 'user',
+      content: message
+    });
+
+    const response = await axios.post(
+      DEEPSEEK_API_URL,
+      {
+        model: 'deepseek-chat',
+        messages: messages,
         stream: false
       },
       {
@@ -110,22 +146,35 @@ Rules: Use "write" for new files or full replacements, "insert" to add lines, "d
 
     const aiResponse = response.data.choices[0].message.content;
     
-    // Parse JSON from response
+    // Add user message to history
+    addMessageToHistory(sessionId, 'user', message);
+    
+    // Parse JSON from response and add AI response to history
     try {
       const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const edits = JSON.parse(jsonMatch[0]);
+        
+        // Add AI response to history
+        addMessageToHistory(sessionId, 'ai', aiResponse);
+        
         res.json({ 
           message: aiResponse,
           edits: edits.files || []
         });
       } else {
+        // Add AI response to history even without edits
+        addMessageToHistory(sessionId, 'ai', aiResponse);
+        
         res.json({ 
           message: aiResponse,
           edits: []
         });
       }
     } catch (parseError) {
+      // Add AI response to history even if JSON parsing fails
+      addMessageToHistory(sessionId, 'ai', aiResponse);
+      
       res.json({ 
         message: aiResponse,
         edits: []
@@ -137,6 +186,13 @@ Rules: Use "write" for new files or full replacements, "insert" to add lines, "d
       error: 'Failed to get AI response'
     });
   }
+});
+
+// Debug endpoint to see conversation history
+router.get('/history/:sessionId', (req, res) => {
+  const sessionId = req.params.sessionId;
+  const history = getConversationHistory(sessionId, 50); // Get more for debugging
+  res.json(history);
 });
 
 module.exports = router;
