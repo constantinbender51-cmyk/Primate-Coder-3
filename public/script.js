@@ -3,6 +3,7 @@ class CodeEditor {
         this.currentFile = null;
         this.pendingEdits = null;
         this.sessionId = this.getOrCreateSessionId();
+        this.deploymentPollInterval = null;
         this.init();
     }
 
@@ -19,6 +20,7 @@ class CodeEditor {
         this.setupEventListeners();
         this.setMobileView();
         await this.loadFileTree();
+        this.startDeploymentPolling(); // Start polling for deployment status
     }
 
     setupEventListeners() {
@@ -370,6 +372,87 @@ class CodeEditor {
     showError(message) {
         // Simple error display - you might want to use a toast or better UI
         alert(message);
+    }
+
+    // Deployment status methods
+    startDeploymentPolling() {
+        this.checkDeploymentStatus(); // Check immediately
+        this.deploymentPollInterval = setInterval(() => {
+            this.checkDeploymentStatus();
+        }, 30000); // Check every 30 seconds
+    }
+
+    async checkDeploymentStatus() {
+        try {
+            const response = await fetch('/api/railway/status');
+            const status = await response.json();
+            
+            if (status.error) {
+                this.updateDeploymentStatus('error', 'API Error');
+                return;
+            }
+
+            this.updateDeploymentStatus(status.status, status.url, status.serviceStatus);
+        } catch (error) {
+            console.error('Failed to fetch deployment status:', error);
+            this.updateDeploymentStatus('error', 'Connection Failed');
+        }
+    }
+
+    updateDeploymentStatus(status, url = null, serviceStatus = null) {
+        const indicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const urlLink = document.getElementById('deployment-url');
+
+        // Reset classes
+        indicator.className = 'status-indicator';
+        urlLink.style.display = 'none';
+
+        switch (status) {
+            case 'SUCCESS':
+            case 'LIVE':
+                indicator.classList.add('success');
+                statusText.textContent = 'Live';
+                if (url) {
+                    urlLink.href = url;
+                    urlLink.textContent = 'Visit Site';
+                    urlLink.style.display = 'inline';
+                }
+                break;
+                
+            case 'BUILDING':
+            case 'DEPLOYING':
+                indicator.classList.add('building');
+                statusText.textContent = serviceStatus || 'Deploying';
+                break;
+                
+            case 'FAILED':
+            case 'CRASHED':
+                indicator.classList.add('failed');
+                statusText.textContent = 'Failed';
+                break;
+                
+            case 'QUEUED':
+                indicator.classList.add('queued');
+                statusText.textContent = 'Queued';
+                break;
+                
+            case 'NO_DEPLOYMENTS':
+                indicator.classList.add('queued');
+                statusText.textContent = 'No Deployments';
+                break;
+                
+            default:
+                indicator.classList.add('queued');
+                statusText.textContent = status || 'Unknown';
+        }
+    }
+
+    // Clean up interval when needed
+    destroy() {
+        if (this.deploymentPollInterval) {
+            clearInterval(this.deploymentPollInterval);
+        }
     }
 }
 
