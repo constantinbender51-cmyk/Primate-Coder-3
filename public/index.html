@@ -18,17 +18,15 @@
         <div class="pane code-pane active" id="code-pane">
             <div class="pane-header">
                 <h3>Repository Files</h3>
-                <button class="refresh-btn" id="refresh-files">Refresh</button>
-            </div>
-            <div class="file-tree" id="file-tree">
-                <div class="loading">Loading files...</div>
-            </div>
-            <div class="file-content" id="file-content">
-                <div class="no-file-selected">
-                    Select a file to view its content
+                <div class="header-actions">
+                   <div class="deployment-status" id="deployment-status">
+                        <div class="status-indicator" id="status-indicator"></div>
+                        <span class="status-text" id="status-text">Checking...</span>
+                        <a href="#" class="deployment-url" id="deployment-url" target="_blank" style="display: none;"></a>
+                    </div>
+                    <button class="refresh-btn" id="refresh-files">Refresh</button>
                 </div>
             </div>
-        </div>
 
         <!-- Chat Pane -->
         <div class="pane chat-pane" id="chat-pane">
