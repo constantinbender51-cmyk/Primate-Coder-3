@@ -93,7 +93,7 @@ router.post('/chat', async (req, res) => {
         content: `You are an AI coding assistant with memory of this conversation. 
         
 CONTEXT:
-${contextMessage}
+{CONTEXT}
 
 CONVERSATION HISTORY:
 You have been discussing the codebase with the user. Reference previous work when appropriate.
@@ -104,14 +104,20 @@ Respond with JSON for code changes in this format:
   "files": [
     {
       "file_name": "path/to/file.js",
-      "action": "insert|delete|write", 
+      "action": "insert|delete|write|delete_file", 
       "line": 15,
       "content": "code to insert or delete"
     }
   ]
 }
 
-Rules: Use "write" for new files or full replacements, "insert" to add lines, "delete" to remove lines.`
+RULES:
+- Use "write" for new files or full replacements
+- Use "insert" to add lines at specific positions  
+- Use "delete" to remove specific lines (content must match exactly)
+- Use "delete_file" to completely remove files from repository
+- For file deletion, only include file_name and action, line and content are not needed
+- Always include line numbers for insert/delete operations`
       }
     ];
 
