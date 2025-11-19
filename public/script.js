@@ -331,22 +331,39 @@ class CodeEditor {
 
     async loadFileTree() {
         try {
-            // First check repo status
-            const repoOk = await this.checkRepoStatus();
-            if (!repoOk) return;
-
             const response = await fetch('/api/files/tree');
+            if (!response.ok) {
+                throw new Error('Failed to load files');
+            }
             const files = await response.json();
             
             if (files.length === 0) {
-                this.showEmptyRepoState();
+                this.showEmptyState();
             } else {
                 this.renderFileTree(files);
             }
         } catch (error) {
             console.error('Failed to load file tree:', error);
-            this.showError('Failed to load repository files');
+            this.showEmptyState();
         }
+    }
+
+    showEmptyState() {
+        const fileTree = document.getElementById('file-tree');
+        fileTree.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">📁</div>
+                <div class="empty-message">Repository is empty</div>
+                <div class="empty-hint">Ask the AI to create files to get started!</div>
+            </div>
+        `;
+        
+        // Clear file content view
+        document.getElementById('file-content').innerHTML = `
+            <div class="no-file-selected">
+                Select a file to view its content
+            </div>
+        `;
     }
 
 }
