@@ -93,7 +93,7 @@ router.post('/chat', async (req, res) => {
         content: `You are an AI coding assistant with memory of this conversation. 
         
 CONTEXT:
-{CONTEXT}
+${contextMessage}
 
 CONVERSATION HISTORY:
 You have been discussing the codebase with the user. Reference previous work when appropriate.
