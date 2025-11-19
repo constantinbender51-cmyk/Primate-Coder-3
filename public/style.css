@@ -322,6 +322,60 @@ body {
     cursor: not-allowed;
 }
 
+/* Repo Status Styles */
+.repo-error, .empty-repo {
+    padding: 20px;
+    text-align: center;
+    color: #8b949e;
+}
+
+.error-icon, .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.error-message, .empty-message {
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.error-help {
+    text-align: left;
+    font-size: 12px;
+    margin-top: 16px;
+}
+
+.error-help ul {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.repo-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+/* File tree enhancements */
+.file-item.error {
+    color: #f85149;
+}
+
+.file-item.error::before {
+    content: '⚠️';
+}
+
+/* Loading states */
+.loading, .no-file-selected, .repo-error, .empty-repo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+}
+
 /* Mobile Styles */
 @media (max-width: 768px) {
     .mobile-tabs {
