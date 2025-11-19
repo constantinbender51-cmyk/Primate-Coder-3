@@ -172,6 +172,9 @@ class CodeEditor {
         input.value = '';
         this.setSendButtonState(false);
 
+        // Show loading indicator
+        this.addMessage('ai', '🔍 Analyzing repository and generating changes...');
+
         try {
             const response = await fetch('/api/deepseek/chat', {
                 method: 'POST',
@@ -185,6 +188,13 @@ class CodeEditor {
                 throw new Error(data.details || data.error);
             }
 
+            // Remove the loading message and add the actual response
+            const messagesContainer = document.getElementById('chat-messages');
+            const lastMessage = messagesContainer.lastElementChild;
+            if (lastMessage && lastMessage.querySelector('.message-content')?.textContent.includes('Analyzing repository')) {
+                lastMessage.remove();
+            }
+
             this.addMessage('ai', data.message);
 
             // Show edit preview if there are edits
@@ -193,6 +203,14 @@ class CodeEditor {
             }
         } catch (error) {
             console.error('Failed to send message:', error);
+            
+            // Remove loading message if it exists
+            const messagesContainer = document.getElementById('chat-messages');
+            const lastMessage = messagesContainer.lastElementChild;
+            if (lastMessage && lastMessage.querySelector('.message-content')?.textContent.includes('Analyzing repository')) {
+                lastMessage.remove();
+            }
+            
             this.addMessage('ai', `Error: ${error.message}`);
         } finally {
             this.setSendButtonState(true);
