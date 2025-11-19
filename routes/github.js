@@ -15,35 +15,20 @@ router.post('/apply-edits', async (req, res) => {
     const { edits } = req.body;
     const results = [];
 
-    // Sort edits by file and line number (highest first)
-    const fileEdits = {};
-    
-    edits.forEach(edit => {
-      if (!fileEdits[edit.file_name]) {
-        fileEdits[edit.file_name] = [];
-      }
-      fileEdits[edit.file_name].push(edit);
-    });
-
-    // Process each file
-    for (const [filename, fileEditsList] of Object.entries(fileEdits)) {
-      // Sort edits for this file by line number (highest first)
-      fileEditsList.sort((a, b) => (b.line || 0) - (a.line || 0));
-      
-      // Get current file content (if file exists)
+    for (const edit of edits) {
       let currentContent = '';
       let fileExists = true;
       
+      // Try to get existing file
       try {
         const fileResponse = await octokit.rest.repos.getContent({
           owner,
           repo,
-          path: filename
+          path: edit.file_name
         });
         currentContent = Buffer.from(fileResponse.data.content, 'base64').toString();
       } catch (error) {
         if (error.status === 404) {
-          // File doesn't exist yet - this is OK for new files
           fileExists = false;
           currentContent = '';
         } else {
@@ -51,91 +36,62 @@ router.post('/apply-edits', async (req, res) => {
         }
       }
 
-      let lines = currentContent ? currentContent.split('\n') : [];
-
-      // Apply edits
-      for (const edit of fileEditsList) {
-        switch (edit.action) {
-          case 'write':
-            lines = edit.content.split('\n');
-            break;
-
-          case 'insert':
-            if (edit.line > lines.length) {
-              // Pad with empty lines if inserting beyond end
-              while (lines.length < edit.line - 1) {
-                lines.push('');
-              }
-              lines.push(edit.content);
-            } else {
-              lines.splice(edit.line - 1, 0, edit.content);
-            }
-            break;
-
-          case 'delete':
-            // Only delete if the content matches and line exists
-            if (lines[edit.line - 1] && lines[edit.line - 1] === edit.content) {
-              lines.splice(edit.line - 1, 1);
-            } else if (lines[edit.line - 1]) {
-              throw new Error(`Delete validation failed at line ${edit.line}. Expected: "${edit.content}", Found: "${lines[edit.line - 1]}"`);
-            }
-            // If line doesn't exist, just continue silently
-            break;
+      let lines = currentContent.split('\n');
+      
+      // Apply the edit
+      if (edit.action === 'write') {
+        lines = edit.content.split('\n');
+      } else if (edit.action === 'insert') {
+        if (edit.line > lines.length) {
+          lines.push(edit.content);
+        } else {
+          lines.splice(edit.line - 1, 0, edit.content);
+        }
+      } else if (edit.action === 'delete') {
+        if (lines[edit.line - 1] === edit.content) {
+          lines.splice(edit.line - 1, 1);
         }
       }
 
-      // Commit changes
       const newContent = lines.join('\n');
-      const commitMessage = `AI edit: ${filename} - ${fileEditsList.map(e => `${e.action} at line ${e.line}`).join(', ')}`;
+      const commitMessage = `AI: ${edit.action} ${edit.file_name} line ${edit.line}`;
 
-      let commitResult;
       try {
         if (fileExists) {
-          // Get file SHA for update
           const existingFile = await octokit.rest.repos.getContent({
             owner,
             repo,
-            path: filename
+            path: edit.file_name
           });
 
-          commitResult = await octokit.rest.repos.createOrUpdateFileContents({
+          await octokit.rest.repos.createOrUpdateFileContents({
             owner,
             repo,
-            path: filename,
+            path: edit.file_name,
             message: commitMessage,
             content: Buffer.from(newContent).toString('base64'),
             sha: existingFile.data.sha
           });
         } else {
-          // Create new file
-          commitResult = await octokit.rest.repos.createOrUpdateFileContents({
+          await octokit.rest.repos.createOrUpdateFileContents({
             owner,
             repo,
-            path: filename,
+            path: edit.file_name,
             message: commitMessage,
             content: Buffer.from(newContent).toString('base64')
           });
         }
+
+        results.push({ file: edit.file_name, success: true });
       } catch (error) {
-        console.error('Commit error:', error);
         throw error;
       }
-
-      results.push({
-        file: filename,
-        success: true,
-        commit: commitResult.data.commit.html_url,
-        action: fileExists ? 'updated' : 'created'
-      });
     }
 
     res.json({ success: true, results });
   } catch (error) {
     console.error('GitHub API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to apply edits',
-      details: error.response?.data || error.message
-    });
+    res.status(500).json({ error: 'Failed to apply edits' });
   }
 });
 
