@@ -52,7 +52,7 @@ router.get('/status', async (req, res) => {
       {
         query: DEPLOYMENTS_QUERY,
         variables: {
-          projectId: process.env.RAILWAY_PROJECT_ID
+          projectId: process.env.RAILWAY_APP_PROJECT_ID
         }
       },
       {
@@ -106,7 +106,7 @@ router.get('/project', async (req, res) => {
       {
         query: PROJECT_QUERY,
         variables: {
-          projectId: process.env.RAILWAY_PROJECT_ID
+          projectId: process.env.RAILWAY_APP_PROJECT_ID
         }
       },
       {
